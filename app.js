@@ -8,6 +8,10 @@ const newTrackBtn = document.getElementById('newTrackBtn');
 const saveTrackBtn = document.getElementById('saveTrackBtn');
 const trackNameInput = document.getElementById('trackName');
 const trackList = document.getElementById('trackList');
+const telemetrySpeedEl = document.getElementById('telemetrySpeed');
+const telemetryAltEl = document.getElementById('telemetryAlt');
+const telemetryThrottleEl = document.getElementById('telemetryThrottle');
+const telemetryModeEl = document.getElementById('telemetryMode');
 
 const keys = new Set();
 const raycaster = new THREE.Raycaster();
@@ -15,42 +19,47 @@ const pointer = new THREE.Vector2();
 const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 const game = { running: false, editorMode: false, activeGate: 0, lapStartedAt: null };
-
 const flight = {
-  mass: 1.35,
+  mass: 1.45,
   gravity: 9.81,
-  throttle: 0.57,
-  minThrottle: 0.25,
-  maxThrottle: 0.9,
+  throttle: 0.62,
+  minThrottle: 0.22,
+  maxThrottle: 0.95,
   velocity: new THREE.Vector3(),
-  angularVelocity: new THREE.Vector3(), // x=pitchRate, y=yawRate, z=rollRate
-  drag: 0.18,
-  angularDrag: 3.5,
-  maxTilt: THREE.MathUtils.degToRad(35),
-  maxYawRate: THREE.MathUtils.degToRad(110),
+  angularVelocity: new THREE.Vector3(),
+  inertia: new THREE.Vector3(0.022, 0.028, 0.022),
+  linearDrag: 0.07,
+  angularDamping: 2.4,
+  maxRate: {
+    pitch: THREE.MathUtils.degToRad(185),
+    roll: THREE.MathUtils.degToRad(185),
+    yaw: THREE.MathUtils.degToRad(150),
+  },
+  rateKp: new THREE.Vector3(0.09, 0.12, 0.09),
+  rateKd: new THREE.Vector3(0.018, 0.022, 0.018),
+  motorMaxThrust: 9.4,
+  batterySag: 1,
 };
 
-const pilotInput = {
-  pitch: 0,
-  roll: 0,
-  yaw: 0,
-  throttleAxis: 0,
-};
+const input = { pitch: 0, roll: 0, yaw: 0, throttleAxis: 0 };
+const drone = { pos: new THREE.Vector3(0, 3.2, 0) };
 
-const drone = {
-  pos: new THREE.Vector3(0, 3, 0),
-  prevPos: new THREE.Vector3(0, 3, 0),
-};
+const motorMix = [
+  { roll: +1, pitch: +1, yaw: -1 },
+  { roll: -1, pitch: +1, yaw: +1 },
+  { roll: -1, pitch: -1, yaw: -1 },
+  { roll: +1, pitch: -1, yaw: +1 },
+];
 
 let draggingGate = null;
 
 const defaultTrack = {
   name: 'Тренировочная 3D',
   gates: [
-    { x: 18, y: 4, z: 0, r: 2.5 },
-    { x: 38, y: 8, z: -11, r: 2.8 },
-    { x: 58, y: 5, z: 8, r: 2.5 },
-    { x: 78, y: 7, z: -6, r: 2.8 },
+    { x: 18, y: 4, z: 0, r: 2.6 },
+    { x: 40, y: 8, z: -12, r: 2.8 },
+    { x: 63, y: 5, z: 9, r: 2.6 },
+    { x: 86, y: 7, z: -8, r: 2.8 },
   ],
 };
 
@@ -58,85 +67,92 @@ let currentTrack = structuredClone(defaultTrack);
 let savedTracks = loadTracks();
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x030712);
-scene.fog = new THREE.Fog(0x030712, 50, 240);
+scene.background = new THREE.Color(0x050812);
+scene.fog = new THREE.Fog(0x050812, 80, 340);
 
-const camera = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 500);
-camera.position.set(-8, 7, 12);
+const camera = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 700);
+camera.position.set(-10, 6, 12);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
-const hemi = new THREE.HemisphereLight(0x9ecbff, 0x111827, 0.9);
-scene.add(hemi);
-
-const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-sun.position.set(40, 50, 20);
+scene.add(new THREE.HemisphereLight(0xbcd7ff, 0x111827, 0.84));
+const sun = new THREE.DirectionalLight(0xffffff, 1.45);
+sun.position.set(80, 110, 30);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 scene.add(sun);
 
 const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(500, 500, 32, 32),
-  new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.97, metalness: 0.04 })
+  new THREE.PlaneGeometry(800, 800),
+  new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.97, metalness: 0.03 })
 );
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
+scene.add(new THREE.GridHelper(800, 170, 0x1d4ed8, 0x1e293b));
 
-scene.add(new THREE.GridHelper(500, 120, 0x2563eb, 0x1e293b));
+for (let i = 0; i < 40; i += 1) {
+  const h = 4 + Math.random() * 24;
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(6, h, 6),
+    new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8, metalness: 0.2 })
+  );
+  box.position.set((Math.random() - 0.5) * 460, h / 2, (Math.random() - 0.5) * 460);
+  box.castShadow = true;
+  box.receiveShadow = true;
+  scene.add(box);
+}
 
 const droneGroup = new THREE.Group();
 scene.add(droneGroup);
+const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.62, roughness: 0.4 });
+const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x22d3ee, metalness: 0.42, roughness: 0.35 });
 
-const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.6, roughness: 0.45 });
-const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x22d3ee, metalness: 0.45, roughness: 0.35 });
+const fuselage = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.1, 6, 14), frameMaterial);
+fuselage.rotation.z = Math.PI / 2;
+fuselage.castShadow = true;
+droneGroup.add(fuselage);
 
-const frame = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.28, 0.85), frameMaterial);
-frame.castShadow = true;
-droneGroup.add(frame);
+const topPlate = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.12, 0.65), accentMaterial);
+topPlate.position.y = 0.18;
+topPlate.castShadow = true;
+droneGroup.add(topPlate);
 
-const stack = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.22, 0.6), accentMaterial);
-stack.position.y = 0.25;
-stack.castShadow = true;
-droneGroup.add(stack);
-
-const armGeom = new THREE.BoxGeometry(2.4, 0.08, 0.12);
-const motors = [];
-const rotors = [];
+const armGeom = new THREE.BoxGeometry(2.45, 0.09, 0.12);
 const armAngles = [Math.PI / 4, -Math.PI / 4, (3 * Math.PI) / 4, (-3 * Math.PI) / 4];
+const rotors = [];
 for (const angle of armAngles) {
   const arm = new THREE.Mesh(armGeom, frameMaterial);
   arm.rotation.y = angle;
   arm.castShadow = true;
   droneGroup.add(arm);
 
-  const mx = Math.cos(angle) * 1.18;
-  const mz = Math.sin(angle) * 1.18;
+  const mx = Math.cos(angle) * 1.2;
+  const mz = Math.sin(angle) * 1.2;
 
-  const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.14, 16), frameMaterial);
-  motor.position.set(mx, 0.06, mz);
+  const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.16, 16), frameMaterial);
+  motor.position.set(mx, 0.08, mz);
   motor.castShadow = true;
   droneGroup.add(motor);
-  motors.push(motor);
 
-  const rotor = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.5, 0.5, 0.02, 24),
-    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.1, roughness: 0.6, transparent: true, opacity: 0.72 })
+  const prop = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.52, 0.52, 0.018, 30),
+    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.58, metalness: 0.12, transparent: true, opacity: 0.72 })
   );
-  rotor.position.set(mx, 0.16, mz);
-  rotor.castShadow = true;
-  droneGroup.add(rotor);
-  rotors.push(rotor);
+  prop.position.set(mx, 0.17, mz);
+  prop.castShadow = true;
+  droneGroup.add(prop);
+  rotors.push(prop);
 }
 
-const skidGeom = new THREE.TorusGeometry(0.72, 0.03, 12, 28, Math.PI);
+const skidGeom = new THREE.TorusGeometry(0.74, 0.03, 12, 28, Math.PI);
 for (const side of [-0.34, 0.34]) {
   const skid = new THREE.Mesh(skidGeom, frameMaterial);
   skid.rotation.set(Math.PI / 2, 0, Math.PI / 2);
-  skid.position.set(0, -0.33, side);
+  skid.position.set(0, -0.34, side);
   skid.castShadow = true;
   droneGroup.add(skid);
 }
@@ -144,9 +160,7 @@ for (const side of [-0.34, 0.34]) {
 const gateObjects = [];
 const clock = new THREE.Clock();
 
-function setStatus(text) {
-  statusEl.textContent = text;
-}
+function setStatus(text) { statusEl.textContent = text; }
 
 function loadTracks() {
   try {
@@ -164,12 +178,12 @@ function saveTracks() {
 
 function resetDrone() {
   drone.pos.set(0, 3.2, 0);
-  drone.prevPos.copy(drone.pos);
   droneGroup.position.copy(drone.pos);
   droneGroup.rotation.set(0, 0, 0);
   flight.velocity.set(0, 0, 0);
   flight.angularVelocity.set(0, 0, 0);
-  flight.throttle = 0.57;
+  flight.throttle = 0.62;
+  flight.batterySag = 1;
   game.activeGate = 0;
   game.lapStartedAt = null;
 }
@@ -233,66 +247,94 @@ function resizeRenderer() {
   camera.updateProjectionMatrix();
 }
 
-function updatePilotInput() {
-  pilotInput.pitch = 0;
-  pilotInput.roll = 0;
-  pilotInput.yaw = 0;
-  pilotInput.throttleAxis = 0;
+function updateInput() {
+  input.pitch = 0;
+  input.roll = 0;
+  input.yaw = 0;
+  input.throttleAxis = 0;
 
-  if (keys.has('w') || keys.has('arrowup')) pilotInput.pitch += 1;
-  if (keys.has('s') || keys.has('arrowdown')) pilotInput.pitch -= 1;
-  if (keys.has('a') || keys.has('arrowleft')) pilotInput.roll += 1;
-  if (keys.has('d') || keys.has('arrowright')) pilotInput.roll -= 1;
-  if (keys.has('q')) pilotInput.yaw += 1;
-  if (keys.has('e')) pilotInput.yaw -= 1;
-  if (keys.has(' ')) pilotInput.throttleAxis += 1;
-  if (keys.has('shift')) pilotInput.throttleAxis -= 1;
+  if (keys.has('w') || keys.has('arrowup')) input.pitch += 1;
+  if (keys.has('s') || keys.has('arrowdown')) input.pitch -= 1;
+  if (keys.has('a') || keys.has('arrowleft')) input.roll += 1;
+  if (keys.has('d') || keys.has('arrowright')) input.roll -= 1;
+  if (keys.has('q')) input.yaw += 1;
+  if (keys.has('e')) input.yaw -= 1;
+  if (keys.has(' ')) input.throttleAxis += 1;
+  if (keys.has('shift')) input.throttleAxis -= 1;
 }
 
-function updateDronePhysics(dt) {
-  updatePilotInput();
+function updatePhysics(dt) {
+  updateInput();
 
-  flight.throttle = THREE.MathUtils.clamp(
-    flight.throttle + pilotInput.throttleAxis * dt * 0.4,
-    flight.minThrottle,
-    flight.maxThrottle
+  flight.throttle = THREE.MathUtils.clamp(flight.throttle + input.throttleAxis * dt * 0.45, flight.minThrottle, flight.maxThrottle);
+  flight.batterySag = Math.max(0.86, flight.batterySag - dt * 0.0017);
+
+  const desiredRates = new THREE.Vector3(
+    input.pitch * flight.maxRate.pitch,
+    input.yaw * flight.maxRate.yaw,
+    input.roll * flight.maxRate.roll
   );
 
-  const targetPitch = -pilotInput.pitch * flight.maxTilt;
-  const targetRoll = pilotInput.roll * flight.maxTilt;
-  const targetYawRate = pilotInput.yaw * flight.maxYawRate;
+  const rateError = desiredRates.clone().sub(flight.angularVelocity);
+  const torqueCmd = new THREE.Vector3(
+    rateError.x * flight.rateKp.x - flight.angularVelocity.x * flight.rateKd.x,
+    rateError.y * flight.rateKp.y - flight.angularVelocity.y * flight.rateKd.y,
+    rateError.z * flight.rateKp.z - flight.angularVelocity.z * flight.rateKd.z
+  );
 
-  droneGroup.rotation.x = THREE.MathUtils.damp(droneGroup.rotation.x, targetPitch, 6.5, dt);
-  droneGroup.rotation.z = THREE.MathUtils.damp(droneGroup.rotation.z, targetRoll, 6.5, dt);
-  flight.angularVelocity.y = THREE.MathUtils.damp(flight.angularVelocity.y, targetYawRate, 8, dt);
-  droneGroup.rotation.y += flight.angularVelocity.y * dt;
+  const motorOutputs = motorMix.map((mix) => THREE.MathUtils.clamp(
+    flight.throttle
+      + torqueCmd.z * mix.roll * 0.19
+      + torqueCmd.x * mix.pitch * 0.19
+      + torqueCmd.y * mix.yaw * 0.12,
+    0,
+    1
+  ));
 
-  const thrustLocal = new THREE.Vector3(0, flight.throttle * flight.mass * flight.gravity * 2.1, 0);
-  const thrustWorld = thrustLocal.applyEuler(droneGroup.rotation);
+  const totalThrust = motorOutputs.reduce((sum, m) => sum + (m * m) * flight.motorMaxThrust * flight.batterySag, 0);
+
+  const rollTorque = (motorOutputs[0] - motorOutputs[1] - motorOutputs[2] + motorOutputs[3]) * 0.16;
+  const pitchTorque = (motorOutputs[0] + motorOutputs[1] - motorOutputs[2] - motorOutputs[3]) * 0.16;
+  const yawTorque = (-motorOutputs[0] + motorOutputs[1] - motorOutputs[2] + motorOutputs[3]) * 0.08;
+
+  const angularAccel = new THREE.Vector3(
+    (pitchTorque / flight.inertia.x) - flight.angularVelocity.x * flight.angularDamping,
+    (yawTorque / flight.inertia.y) - flight.angularVelocity.y * flight.angularDamping,
+    (rollTorque / flight.inertia.z) - flight.angularVelocity.z * flight.angularDamping
+  );
+
+  flight.angularVelocity.addScaledVector(angularAccel, dt);
+  droneGroup.rotateX(flight.angularVelocity.x * dt);
+  droneGroup.rotateY(flight.angularVelocity.y * dt);
+  droneGroup.rotateZ(flight.angularVelocity.z * dt);
+
+  const thrustWorld = new THREE.Vector3(0, totalThrust, 0).applyQuaternion(droneGroup.quaternion);
   const gravityForce = new THREE.Vector3(0, -flight.mass * flight.gravity, 0);
-  const dragForce = flight.velocity.clone().multiplyScalar(-flight.drag * flight.velocity.length());
+  const dragForce = flight.velocity.clone().multiplyScalar(-flight.linearDrag * flight.velocity.length());
 
-  const totalForce = thrustWorld.add(gravityForce).add(dragForce);
-  const acceleration = totalForce.multiplyScalar(1 / flight.mass);
+  const acceleration = thrustWorld.add(gravityForce).add(dragForce).multiplyScalar(1 / flight.mass);
   flight.velocity.addScaledVector(acceleration, dt);
   drone.pos.addScaledVector(flight.velocity, dt);
 
-  if (drone.pos.y < 0.8) {
-    drone.pos.y = 0.8;
-    flight.velocity.y = Math.max(0, flight.velocity.y * -0.12);
-    flight.velocity.multiplyScalar(0.95);
+  if (drone.pos.y < 0.75) {
+    drone.pos.y = 0.75;
+    flight.velocity.y = Math.max(0, -flight.velocity.y * 0.16);
+    flight.velocity.multiplyScalar(0.92);
   }
 
-  drone.pos.x = THREE.MathUtils.clamp(drone.pos.x, -220, 220);
-  drone.pos.z = THREE.MathUtils.clamp(drone.pos.z, -220, 220);
-
-  drone.prevPos.copy(droneGroup.position);
+  drone.pos.x = THREE.MathUtils.clamp(drone.pos.x, -360, 360);
+  drone.pos.z = THREE.MathUtils.clamp(drone.pos.z, -360, 360);
   droneGroup.position.copy(drone.pos);
 
-  const rotorSpeed = 40 + flight.throttle * 280;
-  rotors.forEach((rotor, index) => {
-    rotor.rotation.y += dt * rotorSpeed * (index % 2 === 0 ? 1 : -1);
+  motorOutputs.forEach((m, i) => {
+    rotors[i].rotation.y += dt * (80 + m * 850) * (i % 2 === 0 ? 1 : -1);
+    rotors[i].material.opacity = 0.5 + m * 0.35;
   });
+
+  telemetrySpeedEl.textContent = `${flight.velocity.length().toFixed(1)} м/с`;
+  telemetryAltEl.textContent = `${drone.pos.y.toFixed(1)} м`;
+  telemetryThrottleEl.textContent = `${Math.round(flight.throttle * 100)}%`;
+  telemetryModeEl.textContent = game.running ? 'ARMED' : 'IDLE';
 }
 
 function checkGates() {
@@ -300,7 +342,7 @@ function checkGates() {
   if (!gate || !game.running) return;
 
   const dist = drone.pos.distanceTo(new THREE.Vector3(gate.x, gate.y, gate.z));
-  if (dist <= gate.r + 0.9) {
+  if (dist <= gate.r + 0.85) {
     if (game.activeGate === 0 && game.lapStartedAt === null) game.lapStartedAt = performance.now();
     game.activeGate += 1;
     updateGateColors();
@@ -317,25 +359,22 @@ function checkGates() {
 
 function updateCamera(dt) {
   const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(droneGroup.quaternion);
-  const desired = drone.pos.clone()
-    .addScaledVector(forward, -9.5)
-    .add(new THREE.Vector3(0, 4.2, 0));
-
-  camera.position.lerp(desired, 1 - Math.exp(-5 * dt));
-  const lookAt = drone.pos.clone().addScaledVector(forward, 8).add(new THREE.Vector3(0, 1.1, 0));
-  camera.lookAt(lookAt);
+  const desired = drone.pos.clone().addScaledVector(forward, -11).add(new THREE.Vector3(0, 5.2, 0));
+  camera.position.lerp(desired, 1 - Math.exp(-4.5 * dt));
+  camera.lookAt(drone.pos.clone().addScaledVector(forward, 14).add(new THREE.Vector3(0, 1.5, 0)));
 }
 
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.033);
 
   if (game.running) {
-    updateDronePhysics(dt);
+    updatePhysics(dt);
     checkGates();
   } else {
-    rotors.forEach((rotor, index) => {
-      rotor.rotation.y += dt * 20 * (index % 2 === 0 ? 1 : -1);
+    rotors.forEach((rotor, i) => {
+      rotor.rotation.y += dt * 42 * (i % 2 === 0 ? 1 : -1);
     });
+    telemetryModeEl.textContent = game.editorMode ? 'EDIT' : 'IDLE';
   }
 
   updateCamera(dt);
@@ -380,10 +419,7 @@ window.addEventListener('mousemove', (event) => {
   updateGateColors();
 });
 
-window.addEventListener('mouseup', () => {
-  draggingGate = null;
-});
-
+window.addEventListener('mouseup', () => { draggingGate = null; });
 window.addEventListener('keydown', (e) => keys.add(e.key.toLowerCase()));
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 window.addEventListener('resize', resizeRenderer);
@@ -393,7 +429,6 @@ startBtn.addEventListener('click', () => {
     setStatus('Добавьте ворота, чтобы начать полёт.');
     return;
   }
-
   game.running = true;
   game.editorMode = false;
   game.activeGate = 0;
@@ -427,7 +462,6 @@ saveTrackBtn.addEventListener('click', () => {
 
   const name = trackNameInput.value.trim() || `3D трасса ${savedTracks.length + 1}`;
   currentTrack.name = name;
-
   const index = savedTracks.findIndex((track) => track.name === name);
   if (index >= 0) savedTracks[index] = structuredClone(currentTrack);
   else savedTracks.push(structuredClone(currentTrack));

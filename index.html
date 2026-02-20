@@ -10,7 +10,7 @@
   <main class="layout">
     <section class="panel controls-panel">
       <h1>3D симулятор квадрокоптера</h1>
-      <p class="hint">Управление: <strong>WASD</strong> или <strong>стрелки</strong>. Подъём/снижение: <strong>Space / Shift</strong>, рыскание: <strong>Q / E</strong>.</p>
+      <p class="hint">Управление: <strong>WASD/стрелки</strong> (крен/тангаж), <strong>Space/Shift</strong> (тяга), <strong>Q/E</strong> (рыскание).</p>
 
       <div class="controls-grid">
         <button id="startBtn">Старт</button>
@@ -21,7 +21,7 @@
 
       <div class="field-row">
         <label for="trackName">Название трассы</label>
-        <input id="trackName" type="text" placeholder="Например: Canyon Run" />
+        <input id="trackName" type="text" placeholder="Например: Alpine FPV" />
       </div>
 
       <div class="field-row">
@@ -29,12 +29,19 @@
         <select id="trackList"></select>
       </div>
 
+      <div class="telemetry">
+        <p><span>Скорость:</span> <strong id="telemetrySpeed">0.0 м/с</strong></p>
+        <p><span>Высота:</span> <strong id="telemetryAlt">0.0 м</strong></p>
+        <p><span>Тяга:</span> <strong id="telemetryThrottle">0%</strong></p>
+        <p><span>Режим:</span> <strong id="telemetryMode">ARMED</strong></p>
+      </div>
+
       <p id="status" class="status">Нажмите «Старт», чтобы начать 3D-полёт.</p>
     </section>
 
     <section class="panel viewport-panel">
       <div id="sim3d" aria-label="3D симуляция"></div>
-      <p class="hint">Режим редактора: клик по сцене добавляет кольцо-триггер. Для перемещения удерживайте <strong>Alt</strong> и тяните мышью.</p>
+      <p class="hint">Редактор трассы: клик добавляет кольцо, <strong>Alt + перетаскивание</strong> перемещает кольцо.</p>
     </section>
   </main>
 
