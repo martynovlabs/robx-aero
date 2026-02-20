@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Симулятор квадрокоптера</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="layout">
+    <section class="panel controls-panel">
+      <h1>Симулятор квадрокоптера</h1>
+      <p class="hint">Управление: <strong>WASD</strong> или <strong>стрелки</strong>. Пролетайте через ворота трассы по порядку.</p>
+
+      <div class="controls-grid">
+        <button id="startBtn">Старт</button>
+        <button id="resetBtn">Сброс</button>
+        <button id="newTrackBtn">Новая трасса</button>
+        <button id="saveTrackBtn">Сохранить трассу</button>
+      </div>
+
+      <div class="field-row">
+        <label for="trackName">Название трассы</label>
+        <input id="trackName" type="text" placeholder="Например: Быстрый круг" />
+      </div>
+
+      <div class="field-row">
+        <label for="trackList">Сохранённые трассы</label>
+        <select id="trackList"></select>
+      </div>
+
+      <p id="status" class="status">Нажмите «Старт», чтобы начать полёт.</p>
+    </section>
+
+    <section class="panel canvas-panel">
+      <canvas id="simCanvas" width="900" height="520" aria-label="Поле симуляции"></canvas>
+      <p class="hint">Режим редактора: клик по полю добавляет ворота. Перетаскивайте их мышью для редактирования.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
