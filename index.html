@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Симулятор квадрокоптера</title>
+  <title>3D симулятор квадрокоптера</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main class="layout">
     <section class="panel controls-panel">
-      <h1>Симулятор квадрокоптера</h1>
-      <p class="hint">Управление: <strong>WASD</strong> или <strong>стрелки</strong>. Пролетайте через ворота трассы по порядку.</p>
+      <h1>3D симулятор квадрокоптера</h1>
+      <p class="hint">Управление: <strong>WASD</strong> или <strong>стрелки</strong>. Подъём/снижение: <strong>Space / Shift</strong>.</p>
 
       <div class="controls-grid">
         <button id="startBtn">Старт</button>
@@ -21,7 +21,7 @@
 
       <div class="field-row">
         <label for="trackName">Название трассы</label>
-        <input id="trackName" type="text" placeholder="Например: Быстрый круг" />
+        <input id="trackName" type="text" placeholder="Например: Canyon Run" />
       </div>
 
       <div class="field-row">
@@ -29,15 +29,15 @@
         <select id="trackList"></select>
       </div>
 
-      <p id="status" class="status">Нажмите «Старт», чтобы начать полёт.</p>
+      <p id="status" class="status">Нажмите «Старт», чтобы начать 3D-полёт.</p>
     </section>
 
-    <section class="panel canvas-panel">
-      <canvas id="simCanvas" width="900" height="520" aria-label="Поле симуляции"></canvas>
-      <p class="hint">Режим редактора: клик по полю добавляет ворота. Перетаскивайте их мышью для редактирования.</p>
+    <section class="panel viewport-panel">
+      <div id="sim3d" aria-label="3D симуляция"></div>
+      <p class="hint">Режим редактора: клик по сцене добавляет кольцо-триггер. Для перемещения удерживайте <strong>Alt</strong> и тяните мышью.</p>
     </section>
   </main>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
