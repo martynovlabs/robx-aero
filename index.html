@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D симулятор квадрокоптера</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="layout">
+    <section class="panel controls-panel">
+      <h1>3D симулятор квадрокоптера</h1>
+      <p class="hint">Управление: <strong>WASD/стрелки</strong> (крен/тангаж), <strong>Space/Shift</strong> (тяга), <strong>Q/E</strong> (рыскание).</p>
+
+      <div class="controls-grid">
+        <button id="startBtn">Старт</button>
+        <button id="resetBtn">Сброс</button>
+        <button id="newTrackBtn">Новая трасса</button>
+        <button id="saveTrackBtn">Сохранить трассу</button>
+      </div>
+
+      <div class="field-row">
+        <label for="trackName">Название трассы</label>
+        <input id="trackName" type="text" placeholder="Например: Alpine FPV" />
+      </div>
+
+      <div class="field-row">
+        <label for="trackList">Сохранённые трассы</label>
+        <select id="trackList"></select>
+      </div>
+
+      <div class="telemetry">
+        <p><span>Скорость:</span> <strong id="telemetrySpeed">0.0 м/с</strong></p>
+        <p><span>Высота:</span> <strong id="telemetryAlt">0.0 м</strong></p>
+        <p><span>Тяга:</span> <strong id="telemetryThrottle">0%</strong></p>
+        <p><span>Режим:</span> <strong id="telemetryMode">ARMED</strong></p>
+      </div>
+
+      <p id="status" class="status">Нажмите «Старт», чтобы начать 3D-полёт.</p>
+    </section>
+
+    <section class="panel viewport-panel">
+      <div id="sim3d" aria-label="3D симуляция"></div>
+      <p class="hint">Редактор трассы: клик добавляет кольцо, <strong>Alt + перетаскивание</strong> перемещает кольцо.</p>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
