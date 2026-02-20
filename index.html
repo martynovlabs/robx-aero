@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D симулятор квадрокоптера</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="layout">
+    <section class="panel controls-panel">
+      <h1>3D симулятор квадрокоптера</h1>
+      <p class="hint">Управление: <strong>WASD</strong> или <strong>стрелки</strong>. Подъём/снижение: <strong>Space / Shift</strong>, рыскание: <strong>Q / E</strong>.</p>
+
+      <div class="controls-grid">
+        <button id="startBtn">Старт</button>
+        <button id="resetBtn">Сброс</button>
+        <button id="newTrackBtn">Новая трасса</button>
+        <button id="saveTrackBtn">Сохранить трассу</button>
+      </div>
+
+      <div class="field-row">
+        <label for="trackName">Название трассы</label>
+        <input id="trackName" type="text" placeholder="Например: Canyon Run" />
+      </div>
+
+      <div class="field-row">
+        <label for="trackList">Сохранённые трассы</label>
+        <select id="trackList"></select>
+      </div>
+
+      <p id="status" class="status">Нажмите «Старт», чтобы начать 3D-полёт.</p>
+    </section>
+
+    <section class="panel viewport-panel">
+      <div id="sim3d" aria-label="3D симуляция"></div>
+      <p class="hint">Режим редактора: клик по сцене добавляет кольцо-триггер. Для перемещения удерживайте <strong>Alt</strong> и тяните мышью.</p>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
