@@ -15,16 +15,42 @@ const pointer = new THREE.Vector2();
 const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 const game = { running: false, editorMode: false, activeGate: 0, lapStartedAt: null };
-const drone = { speed: 16, verticalSpeed: 8, pos: new THREE.Vector3(0, 3, 0) };
+
+const flight = {
+  mass: 1.35,
+  gravity: 9.81,
+  throttle: 0.57,
+  minThrottle: 0.25,
+  maxThrottle: 0.9,
+  velocity: new THREE.Vector3(),
+  angularVelocity: new THREE.Vector3(), // x=pitchRate, y=yawRate, z=rollRate
+  drag: 0.18,
+  angularDrag: 3.5,
+  maxTilt: THREE.MathUtils.degToRad(35),
+  maxYawRate: THREE.MathUtils.degToRad(110),
+};
+
+const pilotInput = {
+  pitch: 0,
+  roll: 0,
+  yaw: 0,
+  throttleAxis: 0,
+};
+
+const drone = {
+  pos: new THREE.Vector3(0, 3, 0),
+  prevPos: new THREE.Vector3(0, 3, 0),
+};
+
 let draggingGate = null;
 
 const defaultTrack = {
   name: 'Тренировочная 3D',
   gates: [
-    { x: 14, y: 3, z: 0, r: 2.5 },
-    { x: 28, y: 5, z: -8, r: 2.5 },
-    { x: 44, y: 3, z: 6, r: 2.5 },
-    { x: 60, y: 4, z: -4, r: 2.5 },
+    { x: 18, y: 4, z: 0, r: 2.5 },
+    { x: 38, y: 8, z: -11, r: 2.8 },
+    { x: 58, y: 5, z: 8, r: 2.5 },
+    { x: 78, y: 7, z: -6, r: 2.8 },
   ],
 };
 
@@ -32,10 +58,10 @@ let currentTrack = structuredClone(defaultTrack);
 let savedTracks = loadTracks();
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050b17);
-scene.fog = new THREE.Fog(0x050b17, 30, 180);
+scene.background = new THREE.Color(0x030712);
+scene.fog = new THREE.Fog(0x030712, 50, 240);
 
-const camera = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 400);
+const camera = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 500);
 camera.position.set(-8, 7, 12);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -43,49 +69,84 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
-const hemi = new THREE.HemisphereLight(0x9ecbff, 0x223344, 1.1);
+const hemi = new THREE.HemisphereLight(0x9ecbff, 0x111827, 0.9);
 scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-dir.position.set(20, 40, 10);
-dir.castShadow = true;
-scene.add(dir);
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(40, 50, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
 
 const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(300, 300, 24, 24),
-  new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.95, metalness: 0.05, wireframe: false })
+  new THREE.PlaneGeometry(500, 500, 32, 32),
+  new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.97, metalness: 0.04 })
 );
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-const grid = new THREE.GridHelper(300, 80, 0x3b82f6, 0x1f2937);
-scene.add(grid);
+scene.add(new THREE.GridHelper(500, 120, 0x2563eb, 0x1e293b));
 
 const droneGroup = new THREE.Group();
 scene.add(droneGroup);
 
-const body = new THREE.Mesh(
-  new THREE.BoxGeometry(1.7, 0.4, 1.7),
-  new THREE.MeshStandardMaterial({ color: 0x22d3ee, metalness: 0.4, roughness: 0.4 })
-);
-body.castShadow = true;
-droneGroup.add(body);
+const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.6, roughness: 0.45 });
+const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x22d3ee, metalness: 0.45, roughness: 0.35 });
 
-for (const [x, z] of [[1.2, 1.2], [1.2, -1.2], [-1.2, 1.2], [-1.2, -1.2]]) {
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.7), new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
-  arm.rotation.z = Math.PI / 2;
-  arm.position.set(0, 0, 0);
+const frame = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.28, 0.85), frameMaterial);
+frame.castShadow = true;
+droneGroup.add(frame);
+
+const stack = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.22, 0.6), accentMaterial);
+stack.position.y = 0.25;
+stack.castShadow = true;
+droneGroup.add(stack);
+
+const armGeom = new THREE.BoxGeometry(2.4, 0.08, 0.12);
+const motors = [];
+const rotors = [];
+const armAngles = [Math.PI / 4, -Math.PI / 4, (3 * Math.PI) / 4, (-3 * Math.PI) / 4];
+for (const angle of armAngles) {
+  const arm = new THREE.Mesh(armGeom, frameMaterial);
+  arm.rotation.y = angle;
+  arm.castShadow = true;
   droneGroup.add(arm);
-  const rotor = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.07, 8, 18), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
-  rotor.rotation.x = Math.PI / 2;
-  rotor.position.set(x, 0.2, z);
+
+  const mx = Math.cos(angle) * 1.18;
+  const mz = Math.sin(angle) * 1.18;
+
+  const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.14, 16), frameMaterial);
+  motor.position.set(mx, 0.06, mz);
+  motor.castShadow = true;
+  droneGroup.add(motor);
+  motors.push(motor);
+
+  const rotor = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.5, 0.02, 24),
+    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.1, roughness: 0.6, transparent: true, opacity: 0.72 })
+  );
+  rotor.position.set(mx, 0.16, mz);
+  rotor.castShadow = true;
   droneGroup.add(rotor);
+  rotors.push(rotor);
+}
+
+const skidGeom = new THREE.TorusGeometry(0.72, 0.03, 12, 28, Math.PI);
+for (const side of [-0.34, 0.34]) {
+  const skid = new THREE.Mesh(skidGeom, frameMaterial);
+  skid.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+  skid.position.set(0, -0.33, side);
+  skid.castShadow = true;
+  droneGroup.add(skid);
 }
 
 const gateObjects = [];
 const clock = new THREE.Clock();
 
-function setStatus(text) { statusEl.textContent = text; }
+function setStatus(text) {
+  statusEl.textContent = text;
+}
 
 function loadTracks() {
   try {
@@ -102,8 +163,13 @@ function saveTracks() {
 }
 
 function resetDrone() {
-  drone.pos.set(0, 3, 0);
+  drone.pos.set(0, 3.2, 0);
+  drone.prevPos.copy(drone.pos);
   droneGroup.position.copy(drone.pos);
+  droneGroup.rotation.set(0, 0, 0);
+  flight.velocity.set(0, 0, 0);
+  flight.angularVelocity.set(0, 0, 0);
+  flight.throttle = 0.57;
   game.activeGate = 0;
   game.lapStartedAt = null;
 }
@@ -111,28 +177,32 @@ function resetDrone() {
 function refreshTrackList() {
   trackList.innerHTML = '';
   savedTracks.forEach((track, index) => {
-    const o = document.createElement('option');
-    o.value = String(index);
-    o.textContent = `${index + 1}. ${track.name}`;
-    trackList.append(o);
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = `${index + 1}. ${track.name}`;
+    trackList.append(option);
   });
 }
 
 function buildTrackMeshes() {
-  gateObjects.forEach((obj) => scene.remove(obj));
+  gateObjects.forEach((obj) => {
+    obj.geometry.dispose();
+    obj.material.dispose();
+    scene.remove(obj);
+  });
   gateObjects.length = 0;
 
   currentTrack.gates.forEach((gate, index) => {
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(gate.r, 0.18, 16, 36),
+      new THREE.TorusGeometry(gate.r, 0.2, 18, 44),
       new THREE.MeshStandardMaterial({ color: index === 0 ? 0x38bdf8 : 0xf59e0b, emissive: 0x111111 })
     );
     ring.position.set(gate.x, gate.y, gate.z);
     ring.rotation.y = Math.PI / 2;
     ring.castShadow = true;
     ring.userData.gateIndex = index;
-    gateObjects.push(ring);
     scene.add(ring);
+    gateObjects.push(ring);
   });
 }
 
@@ -141,7 +211,7 @@ function updateGateColors() {
     const passed = index < game.activeGate;
     const active = index === game.activeGate;
     ring.material.color.setHex(passed ? 0x10b981 : active ? 0x38bdf8 : 0xf59e0b);
-    ring.material.emissive.setHex(active ? 0x163247 : 0x111111);
+    ring.material.emissive.setHex(active ? 0x17314a : 0x111111);
   });
 }
 
@@ -163,35 +233,66 @@ function resizeRenderer() {
   camera.updateProjectionMatrix();
 }
 
-function updateDrone(dt) {
-  const move = new THREE.Vector3();
-  if (keys.has('w') || keys.has('arrowup')) move.x += 1;
-  if (keys.has('s') || keys.has('arrowdown')) move.x -= 1;
-  if (keys.has('a') || keys.has('arrowleft')) move.z += 1;
-  if (keys.has('d') || keys.has('arrowright')) move.z -= 1;
-  if (keys.has(' ')) move.y += 1;
-  if (keys.has('shift')) move.y -= 1;
+function updatePilotInput() {
+  pilotInput.pitch = 0;
+  pilotInput.roll = 0;
+  pilotInput.yaw = 0;
+  pilotInput.throttleAxis = 0;
 
-  if (move.lengthSq() > 0) move.normalize();
+  if (keys.has('w') || keys.has('arrowup')) pilotInput.pitch += 1;
+  if (keys.has('s') || keys.has('arrowdown')) pilotInput.pitch -= 1;
+  if (keys.has('a') || keys.has('arrowleft')) pilotInput.roll += 1;
+  if (keys.has('d') || keys.has('arrowright')) pilotInput.roll -= 1;
+  if (keys.has('q')) pilotInput.yaw += 1;
+  if (keys.has('e')) pilotInput.yaw -= 1;
+  if (keys.has(' ')) pilotInput.throttleAxis += 1;
+  if (keys.has('shift')) pilotInput.throttleAxis -= 1;
+}
 
-  drone.pos.x += move.x * drone.speed * dt;
-  drone.pos.y += move.y * drone.verticalSpeed * dt;
-  drone.pos.z += move.z * drone.speed * dt;
+function updateDronePhysics(dt) {
+  updatePilotInput();
 
-  drone.pos.y = THREE.MathUtils.clamp(drone.pos.y, 1.2, 30);
-  drone.pos.x = THREE.MathUtils.clamp(drone.pos.x, -140, 140);
-  drone.pos.z = THREE.MathUtils.clamp(drone.pos.z, -140, 140);
+  flight.throttle = THREE.MathUtils.clamp(
+    flight.throttle + pilotInput.throttleAxis * dt * 0.4,
+    flight.minThrottle,
+    flight.maxThrottle
+  );
+
+  const targetPitch = -pilotInput.pitch * flight.maxTilt;
+  const targetRoll = pilotInput.roll * flight.maxTilt;
+  const targetYawRate = pilotInput.yaw * flight.maxYawRate;
+
+  droneGroup.rotation.x = THREE.MathUtils.damp(droneGroup.rotation.x, targetPitch, 6.5, dt);
+  droneGroup.rotation.z = THREE.MathUtils.damp(droneGroup.rotation.z, targetRoll, 6.5, dt);
+  flight.angularVelocity.y = THREE.MathUtils.damp(flight.angularVelocity.y, targetYawRate, 8, dt);
+  droneGroup.rotation.y += flight.angularVelocity.y * dt;
+
+  const thrustLocal = new THREE.Vector3(0, flight.throttle * flight.mass * flight.gravity * 2.1, 0);
+  const thrustWorld = thrustLocal.applyEuler(droneGroup.rotation);
+  const gravityForce = new THREE.Vector3(0, -flight.mass * flight.gravity, 0);
+  const dragForce = flight.velocity.clone().multiplyScalar(-flight.drag * flight.velocity.length());
+
+  const totalForce = thrustWorld.add(gravityForce).add(dragForce);
+  const acceleration = totalForce.multiplyScalar(1 / flight.mass);
+  flight.velocity.addScaledVector(acceleration, dt);
+  drone.pos.addScaledVector(flight.velocity, dt);
+
+  if (drone.pos.y < 0.8) {
+    drone.pos.y = 0.8;
+    flight.velocity.y = Math.max(0, flight.velocity.y * -0.12);
+    flight.velocity.multiplyScalar(0.95);
+  }
+
+  drone.pos.x = THREE.MathUtils.clamp(drone.pos.x, -220, 220);
+  drone.pos.z = THREE.MathUtils.clamp(drone.pos.z, -220, 220);
+
+  drone.prevPos.copy(droneGroup.position);
   droneGroup.position.copy(drone.pos);
 
-  if (move.lengthSq() > 0) {
-    const targetYaw = Math.atan2(-move.z, move.x);
-    droneGroup.rotation.y = THREE.MathUtils.lerp(droneGroup.rotation.y, targetYaw, 0.08);
-    droneGroup.rotation.z = THREE.MathUtils.lerp(droneGroup.rotation.z, move.z * 0.18, 0.08);
-    droneGroup.rotation.x = THREE.MathUtils.lerp(droneGroup.rotation.x, -move.x * 0.1, 0.08);
-  } else {
-    droneGroup.rotation.x *= 0.9;
-    droneGroup.rotation.z *= 0.9;
-  }
+  const rotorSpeed = 40 + flight.throttle * 280;
+  rotors.forEach((rotor, index) => {
+    rotor.rotation.y += dt * rotorSpeed * (index % 2 === 0 ? 1 : -1);
+  });
 }
 
 function checkGates() {
@@ -199,16 +300,15 @@ function checkGates() {
   if (!gate || !game.running) return;
 
   const dist = drone.pos.distanceTo(new THREE.Vector3(gate.x, gate.y, gate.z));
-  if (dist <= gate.r + 0.8) {
+  if (dist <= gate.r + 0.9) {
     if (game.activeGate === 0 && game.lapStartedAt === null) game.lapStartedAt = performance.now();
     game.activeGate += 1;
     updateGateColors();
 
     if (game.activeGate >= currentTrack.gates.length) {
       const lapMs = game.lapStartedAt ? performance.now() - game.lapStartedAt : 0;
-      const lapSec = (lapMs / 1000).toFixed(2);
       game.running = false;
-      setStatus(`Финиш! Время круга: ${lapSec} сек.`);
+      setStatus(`Финиш! Время круга: ${(lapMs / 1000).toFixed(2)} сек.`);
     } else {
       setStatus(`Ворота ${game.activeGate}/${currentTrack.gates.length} пройдены.`);
     }
@@ -216,17 +316,28 @@ function checkGates() {
 }
 
 function updateCamera(dt) {
-  const cameraOffset = new THREE.Vector3(-8, 5, 11);
-  const worldOffset = cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), droneGroup.rotation.y);
-  const desired = drone.pos.clone().add(worldOffset);
-  camera.position.lerp(desired, 1 - Math.exp(-4 * dt));
-  camera.lookAt(drone.pos.x + 4, drone.pos.y + 1.2, drone.pos.z);
+  const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(droneGroup.quaternion);
+  const desired = drone.pos.clone()
+    .addScaledVector(forward, -9.5)
+    .add(new THREE.Vector3(0, 4.2, 0));
+
+  camera.position.lerp(desired, 1 - Math.exp(-5 * dt));
+  const lookAt = drone.pos.clone().addScaledVector(forward, 8).add(new THREE.Vector3(0, 1.1, 0));
+  camera.lookAt(lookAt);
 }
 
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.033);
-  if (game.running) updateDrone(dt);
-  checkGates();
+
+  if (game.running) {
+    updateDronePhysics(dt);
+    checkGates();
+  } else {
+    rotors.forEach((rotor, index) => {
+      rotor.rotation.y += dt * 20 * (index % 2 === 0 ? 1 : -1);
+    });
+  }
+
   updateCamera(dt);
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
@@ -245,8 +356,7 @@ function getPointerGround(event) {
 renderer.domElement.addEventListener('click', (event) => {
   if (!game.editorMode || event.altKey) return;
   const point = getPointerGround(event);
-  const gate = { x: point.x, y: 3.5, z: point.z, r: 2.5 };
-  currentTrack.gates.push(gate);
+  currentTrack.gates.push({ x: point.x, y: 4, z: point.z, r: 2.6 });
   buildTrackMeshes();
   updateGateColors();
   setStatus(`Добавлено колец: ${currentTrack.gates.length}.`);
@@ -270,7 +380,9 @@ window.addEventListener('mousemove', (event) => {
   updateGateColors();
 });
 
-window.addEventListener('mouseup', () => { draggingGate = null; });
+window.addEventListener('mouseup', () => {
+  draggingGate = null;
+});
 
 window.addEventListener('keydown', (e) => keys.add(e.key.toLowerCase()));
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -281,6 +393,7 @@ startBtn.addEventListener('click', () => {
     setStatus('Добавьте ворота, чтобы начать полёт.');
     return;
   }
+
   game.running = true;
   game.editorMode = false;
   game.activeGate = 0;
@@ -293,7 +406,7 @@ resetBtn.addEventListener('click', () => {
   game.running = false;
   resetDrone();
   updateGateColors();
-  setStatus('Позиция коптера сброшена.');
+  setStatus('Коптер сброшен в стартовую позицию.');
 });
 
 newTrackBtn.addEventListener('click', () => {
@@ -303,7 +416,7 @@ newTrackBtn.addEventListener('click', () => {
   trackNameInput.value = currentTrack.name;
   resetDrone();
   buildTrackMeshes();
-  setStatus('Редактор включен: клик добавляет кольца, Alt+перетаскивание двигает кольца.');
+  setStatus('Редактор: клик добавляет кольцо, Alt + перетаскивание двигает кольцо.');
 });
 
 saveTrackBtn.addEventListener('click', () => {
@@ -314,13 +427,14 @@ saveTrackBtn.addEventListener('click', () => {
 
   const name = trackNameInput.value.trim() || `3D трасса ${savedTracks.length + 1}`;
   currentTrack.name = name;
-  const index = savedTracks.findIndex((t) => t.name === name);
+
+  const index = savedTracks.findIndex((track) => track.name === name);
   if (index >= 0) savedTracks[index] = structuredClone(currentTrack);
   else savedTracks.push(structuredClone(currentTrack));
 
   saveTracks();
   refreshTrackList();
-  trackList.value = String(Math.max(0, savedTracks.findIndex((t) => t.name === name)));
+  trackList.value = String(Math.max(0, savedTracks.findIndex((track) => track.name === name)));
   game.editorMode = false;
   setStatus(`Трасса «${name}» сохранена.`);
 });
